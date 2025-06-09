@@ -1,0 +1,46 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # Allows manual triggering
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create releases
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v3
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.14.1
+      - uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libwayland-dev libx11-dev xorg-dev libegl-dev libxkbcommon-dev
+          version: 1.0
+      - name: Build executables
+        run: |
+          zig build -Dtarget=x86_64-windows -Doptimize=ReleaseSafe -Dexe_name=bitfont_windows_x86 &&
+          zig build -Dtarget=x86_64-macos -Doptimize=ReleaseSafe -Dexe_name=bitfont_mac_x86 &&
+          zig build -Dtarget=aarch64-macos -Doptimize=ReleaseSafe -Dexe_name=bitfont_mac_arm &&
+          zig build -Dtarget=x86_64-linux -Doptimize=ReleaseSafe  -Dexe_name=bitfont_linux_x86
+      - name: Generate Checksums
+        run: |
+          cd ./zig-out/bin
+          ls -al
+          sha256sum bitfont_windows_x86.exe bitfont_mac_arm bitfont_mac_x86 bitfont_linux_x86 > checksums.txt
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            ./zig-out/bin/bitfont_windows_x86.exe
+            ./zig-out/bin/bitfont_mac_x86
+            ./zig-out/bin/bitfont_mac_arm
+            ./zig-out/bin/bitfont_linux_x86
+            # ./zig-out/bin/bitfont_linux_arm
+            ./zig-out/bin/checksums.txt
+            LICENSE
