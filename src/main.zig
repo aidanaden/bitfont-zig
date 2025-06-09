@@ -3,6 +3,58 @@ const Allocator = std.mem.Allocator;
 const rl = @import("raylib");
 const assets = @import("assets.zig").embedded_files_map;
 
+const DISPLAY_TEXT = "HELLO WORLD!";
+const SOURCES = [_]BitmapFont.FontSource{
+    BitmapFont.FontSource{
+        .path = "minogram_6x10.png",
+        .char_options = .{
+            .h = 7,
+            .w = 5,
+            .pr = 1,
+            .pl = 0,
+            .pb = 2,
+            .pt = 1,
+            .sequence = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=()[]{}<>/*:#%!?.,'\"@&$",
+        },
+    },
+    BitmapFont.FontSource{
+        .path = "thick_8x8.png",
+        .char_options = .{
+            .h = 7,
+            .w = 7,
+            .pr = 1,
+            .pl = 0,
+            .pb = 1,
+            .pt = 0,
+            .sequence = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=()[]{}<>/*:#%!?.,'\"@&$",
+        },
+    },
+    BitmapFont.FontSource{
+        .path = "round_6x6.png",
+        .char_options = .{
+            .h = 5,
+            .w = 5,
+            .pr = 1,
+            .pl = 0,
+            .pb = 1,
+            .pt = 0,
+            .sequence = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=()[]{}<>/*:#%!?.,'\"@&$",
+        },
+    },
+    BitmapFont.FontSource{
+        .path = "square_6x6.png",
+        .char_options = .{
+            .h = 5,
+            .w = 5,
+            .pr = 1,
+            .pl = 0,
+            .pb = 1,
+            .pt = 0,
+            .sequence = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=()[]{}<>/*:#%!?.,'\"@&$",
+        },
+    },
+};
+
 const BitmapFont = struct {
     /// All values are in px
     const ImageOptions = struct {
@@ -10,6 +62,7 @@ const BitmapFont = struct {
         w: u32,
         h: u32,
     };
+
     /// All values are in px
     const CharOptions = struct {
         w: u32,
@@ -19,7 +72,6 @@ const BitmapFont = struct {
         pl: u32,
         pr: u32,
         sequence: []const u8,
-
         fn get_full_width(self: *const CharOptions) u32 {
             return self.w + self.pl + self.pr;
         }
@@ -27,9 +79,39 @@ const BitmapFont = struct {
             return self.h + self.pt + self.pb;
         }
     };
+
     const Options = struct {
         img: ImageOptions,
         char: CharOptions,
+    };
+
+    const FontSource = struct {
+        path: []const u8,
+        char_options: CharOptions,
+
+        fn get_path_ftype(self: *const FontSource, allocator: std.mem.Allocator) ![:0]u8 {
+            const ftype_len: ?usize = blk: {
+                var path_iter = std.mem.splitBackwardsScalar(
+                    u8,
+                    self.path,
+                    '.',
+                );
+                while (path_iter.next()) |split| {
+                    break :blk split.len;
+                }
+                break :blk null;
+            };
+            if (ftype_len == null) {
+                @panic("failed to load font file type!");
+            }
+            const ftype_offset = self.path.len - 1 - ftype_len.?;
+            const ftype = try std.mem.Allocator.dupeZ(
+                allocator,
+                u8,
+                self.path[ftype_offset..][0 .. ftype_len.? + 1],
+            );
+            return ftype;
+        }
     };
 
     options: Options,
@@ -82,8 +164,11 @@ const BitmapFont = struct {
         if (idx) |i| {
             const x_tiles: u32 = @mod(i, self.img_w_chars);
             const y_tiles: u32 = @divFloor(i, self.img_w_chars);
-            const x_px: u32 = x_tiles * self.options.char.get_full_width();
-            const y_px: u32 = y_tiles * self.options.char.get_full_height();
+            // Skip left padding of current character
+            const x_px: u32 = x_tiles * self.options.char.get_full_width() + self.options.char.pl;
+            // Skip top padding of current character
+            const y_px: u32 = y_tiles * self.options.char.get_full_height() + self.options.char.pt;
+
             // 1. The full texture file (e.g., a spritesheet)
             // +---------------------------------+
             // |          (texture)              |
@@ -120,8 +205,9 @@ const BitmapFont = struct {
                 .{
                     .x = @floatFromInt(x_px),
                     .y = @floatFromInt(y_px),
-                    .height = @floatFromInt(self.options.char.get_full_height()),
-                    .width = @floatFromInt(self.options.char.get_full_width()),
+                    // We only draw the exact dimensions of the character (without padding)
+                    .height = @floatFromInt(self.options.char.h),
+                    .width = @floatFromInt(self.options.char.w),
                 },
                 rect,
                 .{ .x = 0, .y = 0 },
@@ -137,87 +223,8 @@ const Window = struct {
     const HEIGHT = 1080;
 };
 
-const BitmapFontSource = struct {
-    path: []const u8,
-    char_options: BitmapFont.CharOptions,
-
-    fn get_path_ftype(self: *const BitmapFontSource, allocator: std.mem.Allocator) ![:0]u8 {
-        const ftype_len: ?usize = blk: {
-            var path_iter = std.mem.splitBackwardsScalar(
-                u8,
-                self.path,
-                '.',
-            );
-            while (path_iter.next()) |split| {
-                break :blk split.len;
-            }
-            break :blk null;
-        };
-        if (ftype_len == null) {
-            @panic("failed to load font file type!");
-        }
-        const ftype_offset = self.path.len - 1 - ftype_len.?;
-        const ftype = try std.mem.Allocator.dupeZ(
-            allocator,
-            u8,
-            self.path[ftype_offset..][0 .. ftype_len.? + 1],
-        );
-        return ftype;
-    }
-};
-
 pub fn main() !void {
-    const sources = [_]BitmapFontSource{
-        BitmapFontSource{
-            .path = "minogram_6x10.png",
-            .char_options = .{
-                .h = 7,
-                .w = 5,
-                .pr = 1,
-                .pl = 0,
-                .pb = 2,
-                .pt = 1,
-                .sequence = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=()[]{}<>/*:#%!?.,'\"@&$",
-            },
-        },
-        BitmapFontSource{
-            .path = "thick_8x8.png",
-            .char_options = .{
-                .h = 7,
-                .w = 7,
-                .pr = 1,
-                .pl = 0,
-                .pb = 1,
-                .pt = 0,
-                .sequence = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=()[]{}<>/*:#%!?.,'\"@&$",
-            },
-        },
-        BitmapFontSource{
-            .path = "round_6x6.png",
-            .char_options = .{
-                .h = 5,
-                .w = 5,
-                .pr = 1,
-                .pl = 0,
-                .pb = 1,
-                .pt = 0,
-                .sequence = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=()[]{}<>/*:#%!?.,'\"@&$",
-            },
-        },
-        BitmapFontSource{
-            .path = "square_6x6.png",
-            .char_options = .{
-                .h = 5,
-                .w = 5,
-                .pr = 1,
-                .pl = 0,
-                .pb = 1,
-                .pt = 0,
-                .sequence = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-=()[]{}<>/*:#%!?.,'\"@&$",
-            },
-        },
-    };
-    const source = sources[3];
+    const source = SOURCES[3];
 
     // Load font data in bytes + font filetype
     const font_data = assets.get(source.path);
@@ -260,7 +267,6 @@ pub fn main() !void {
     ) catch unreachable;
     defer font.deinit();
 
-    const text = "BITMAP FONT RENDERER IN ZIG!";
     while (!rl.windowShouldClose()) {
         if (rl.isKeyPressed(.q)) {
             break;
@@ -270,7 +276,7 @@ pub fn main() !void {
         defer rl.endDrawing();
         rl.clearBackground(.black);
 
-        font.draw_text(text, .{
+        font.draw_text(DISPLAY_TEXT, .{
             .x = (Window.WIDTH / 2) - 300,
             .y = (Window.HEIGHT / 2) - 200,
             .width = 600,
